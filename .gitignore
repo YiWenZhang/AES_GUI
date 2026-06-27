@@ -6,7 +6,9 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+export/
 *.egg
+*.spec
 
 # Virtualenv
 .venv/
@@ -25,6 +27,17 @@ env/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local tooling
+.claude/
+CLAUDE.md
+AES_GUI/CLAUDE.md
+
+# Runtime outputs
+logs/
+reports/
+AES_GUI/logs/
+AES_GUI/reports/
 
 # Project specific
 _test_files/
