@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "AES-GUI (PySide6 Desktop App)",
+      "runtimeExecutable": ".venv/Scripts/python",
+      "runtimeArgs": ["main.py"],
+      "cwd": "${workspaceFolder}/AES_GUI"
+    }
+  ]
+}

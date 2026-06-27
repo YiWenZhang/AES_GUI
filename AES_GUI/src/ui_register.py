@@ -1,85 +1,115 @@
 # -*- coding: utf-8 -*-
 """
-RegisterTab — software registration UI.
+RegisterPage — software registration card UI.
 """
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
-    QLineEdit, QPushButton, QLabel, QMessageBox,
+    QWidget, QVBoxLayout, QHBoxLayout,
+    QLineEdit, QPushButton, QLabel, QFrame, QMessageBox,
 )
 from PySide6.QtCore import Qt
+from typing import Callable
 
 from .aes_adapter import AesDllAdapter
 from .auth_manager import AuthManager
 
 
-class RegisterTab(QWidget):
-    def __init__(self, adapter: AesDllAdapter, auth: AuthManager):
+class RegisterPage(QWidget):
+    def __init__(
+        self,
+        adapter: AesDllAdapter,
+        auth: AuthManager,
+        on_registered: Callable[[], None] = None,
+    ):
         super().__init__()
         self._adapter = adapter
         self._auth = auth
+        self._on_registered = on_registered
         self._init_ui()
-        self._refresh_status()
+        self._refresh_state()
 
     def _init_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(32, 28, 32, 28)
 
-        # ── Step 1: Hardware detection & registration code generation ──
-        grp_hw = QGroupBox("步骤 1: 获取本机硬件特征 → 生成注册码")
-        hw_layout = QVBoxLayout(grp_hw)
+        # 居中容器
+        outer.addStretch()
+        card = QFrame()
+        card.setProperty("class", "card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(40, 36, 40, 36)
+        layout.setSpacing(20)
 
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("MAC 地址:"))
+        title = QLabel("软件注册激活")
+        title.setStyleSheet("font-size:20px; font-weight:bold; color:#2c3e50;")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        desc = QLabel("系统通过本机硬件特征生成唯一注册码，用于验证软件使用授权")
+        desc.setAlignment(Qt.AlignCenter)
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color:#909399; font-size:12px;")
+        layout.addWidget(desc)
+
+        # ── 步骤 1 ──
+        step1 = QLabel("步骤 1 · 获取硬件特征")
+        step1.setStyleSheet("font-weight:bold; color:#3498db; font-size:14px;")
+        layout.addWidget(step1)
+
+        r1 = QHBoxLayout()
+        r1.addWidget(QLabel("MAC 地址"))
         self._mac_edit = QLineEdit()
         self._mac_edit.setReadOnly(True)
         self._mac_edit.setFixedWidth(200)
-        row1.addWidget(self._mac_edit)
+        r1.addWidget(self._mac_edit)
         btn_detect = QPushButton("检测硬件")
+        btn_detect.setObjectName("normalBtn")
         btn_detect.clicked.connect(self._on_detect)
-        row1.addWidget(btn_detect)
-        row1.addStretch()
-        hw_layout.addLayout(row1)
+        r1.addWidget(btn_detect)
+        r1.addStretch()
+        layout.addLayout(r1)
 
-        row2 = QHBoxLayout()
-        row2.addWidget(QLabel("注册码:"))
+        # ── 步骤 2 ──
+        step2 = QLabel("步骤 2 · 生成注册码")
+        step2.setStyleSheet("font-weight:bold; color:#3498db; font-size:14px;")
+        layout.addWidget(step2)
+
+        r2a = QHBoxLayout()
+        r2a.addWidget(QLabel("注册码"))
         self._code_edit = QLineEdit()
         self._code_edit.setReadOnly(True)
-        self._code_edit.setFixedWidth(340)
-        row2.addWidget(self._code_edit)
-        btn_gen = QPushButton("生成注册码")
+        self._code_edit.setFixedWidth(320)
+        r2a.addWidget(self._code_edit)
+        btn_gen = QPushButton("生成")
+        btn_gen.setObjectName("primaryBtn")
         btn_gen.clicked.connect(self._on_generate_code)
-        row2.addWidget(btn_gen)
-        btn_copy = QPushButton("复制注册码")
-        btn_copy.clicked.connect(self._on_copy_code)
-        row2.addWidget(btn_copy)
-        row2.addStretch()
-        hw_layout.addLayout(row2)
+        r2a.addWidget(btn_gen)
+        r2a.addStretch()
+        layout.addLayout(r2a)
 
-        layout.addWidget(grp_hw)
+        # ── 步骤 3 ──
+        step3 = QLabel("步骤 3 · 输入注册码并激活")
+        step3.setStyleSheet("font-weight:bold; color:#3498db; font-size:14px;")
+        layout.addWidget(step3)
 
-        # ── Step 2: Enter code and verify ──
-        grp_val = QGroupBox("步骤 2: 输入注册码并验证激活")
-        val_layout = QVBoxLayout(grp_val)
-
-        row3 = QHBoxLayout()
-        row3.addWidget(QLabel("输入注册码:"))
+        r3 = QHBoxLayout()
         self._input_code = QLineEdit()
         self._input_code.setPlaceholderText("格式: XXXX-XXXX-XXXX-XXXX")
-        self._input_code.setFixedWidth(380)
-        row3.addWidget(self._input_code)
-        btn_verify = QPushButton("验证注册")
+        self._input_code.setFixedWidth(320)
+        r3.addWidget(self._input_code)
+        btn_verify = QPushButton("验证激活")
+        btn_verify.setObjectName("successBtn")
         btn_verify.clicked.connect(self._on_verify)
-        row3.addWidget(btn_verify)
-        row3.addStretch()
-        val_layout.addLayout(row3)
+        r3.addWidget(btn_verify)
+        r3.addStretch()
+        layout.addLayout(r3)
 
-        self._reg_status = QLabel()
-        val_layout.addWidget(self._reg_status)
+        self._status_label = QLabel()
+        self._status_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self._status_label)
 
-        layout.addWidget(grp_val)
-
-        layout.addStretch()
+        outer.addWidget(card)
+        outer.addStretch()
 
     def _on_detect(self):
         try:
@@ -95,36 +125,30 @@ class RegisterTab(QWidget):
         code = self._auth.generate_registration_code()
         if code:
             self._code_edit.setText(code)
+            self._input_code.setText(code)
         else:
             self._code_edit.setText("生成失败 — 请先加载 DLL")
-
-    def _on_copy_code(self):
-        code = self._code_edit.text().strip()
-        if code:
-            from PySide6.QtWidgets import QApplication
-            QApplication.clipboard().setText(code)
-            self._reg_status.setText("注册码已复制到剪贴板")
-            self._reg_status.setStyleSheet("color: blue;")
 
     def _on_verify(self):
         code = self._input_code.text().strip()
         if not code:
-            self._reg_status.setText("⚠ 请输入注册码")
-            self._reg_status.setStyleSheet("color: orange;")
+            self._status_label.setText("⚠ 请输入注册码")
+            self._status_label.setStyleSheet("color: #e67e22;")
             return
 
         if self._auth.register(code):
-            self._reg_status.setText("✓ 注册成功！软件已激活")
-            self._reg_status.setStyleSheet("color: green; font-weight: bold;")
-            QMessageBox.information(self, "注册成功", "软件已成功注册激活！")
+            self._status_label.setText("✓ 注册成功 — 软件已激活")
+            self._status_label.setStyleSheet("color: #27ae60; font-weight: bold;")
+            if self._on_registered:
+                self._on_registered()
         else:
-            self._reg_status.setText("✗ 注册码无效，请检查后重试")
-            self._reg_status.setStyleSheet("color: red;")
+            self._status_label.setText("✗ 注册码无效，请检查后重试")
+            self._status_label.setStyleSheet("color: #e74c3c;")
 
-    def _refresh_status(self):
+    def _refresh_state(self):
         if self._auth.is_registered():
-            self._reg_status.setText("当前状态: ✓ 已注册 — 可正常使用全部功能")
-            self._reg_status.setStyleSheet("color: green; font-weight: bold;")
+            self._status_label.setText("✓ 当前已激活")
+            self._status_label.setStyleSheet("color: #27ae60; font-weight: bold;")
         else:
-            self._reg_status.setText("当前状态: ✗ 未注册 — 请点击'检测硬件'并'生成注册码'进行注册")
-            self._reg_status.setStyleSheet("color: gray;")
+            self._status_label.setText("○ 尚未激活 — 请完成上述步骤")
+            self._status_label.setStyleSheet("color: #909399;")

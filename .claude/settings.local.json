@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(pip list *)",
+      "Bash(\".venv\\\\Scripts\\\\python\" -c \"import PySide6; print\\(PySide6.__version__\\)\")",
+      "Bash(\".venv\\\\Scripts\\\\python\" -m pip install PySide6)",
+      "Bash(\".venv\\\\Scripts\\\\python\" -c \"import aesdll; print\\('MAC:', aesdll.get_mac_address\\(\\)\\); print\\('Key len:', len\\(aesdll.generate_key_from_machine\\(\\)\\)\\); print\\('AES DLL works'\\)\")",
+      "Bash(where draw.io)",
+      "Bash(\".venv\\\\Scripts\\\\python\" -c \"import sys; sys.path.insert\\(0,'.'\\); from src.main_window import MainWindow; from PySide6.QtWidgets import QApplication; app = QApplication\\(sys.argv\\); w = MainWindow\\(\\); print\\('MainWindow created OK'\\); w.close\\(\\)\")",
+      "Bash(\".venv\\\\Scripts\\\\python\" gen_weekly_report_week2.py)",
+      "Bash(\"./.venv/Scripts/python\" gen_weekly_report_week2.py)",
+      "Bash(\".venv\\\\Scripts\\\\python\" -m pip install python-docx)",
+      "Bash(mv \"D:\\\\Desktop\\\\实训开发\\\\第二周\\\\final_张译文_实训周记_第二周.docx\" \"D:\\\\Desktop\\\\实训开发\\\\第二周\\\\张译文_实训周记_第二周.docx\" 2>&1 && echo \"OK\")",
+      "Bash(ls -la \"D:\\\\Desktop\\\\实训开发\\\\第二周\\\\\" 2>&1)",
+      "Bash(\".venv/Scripts/python\" gen_weekly_report_week2.py)",
+      "Bash(.venv/Scripts/python -c ' *)",
+      "Bash(where java *)",
+      "Bash(java -Dfile.encoding=UTF-8 -jar plantuml.jar -tpng -charset UTF-8 03_数据流图_DFD.puml 04_UML类图.puml)",
+      "Bash(python3 -c ' *)",
+      "Bash(where python *)",
+      "Bash(where python3 *)",
+      "Bash(.venv/Scripts/pip.exe list *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(.venv/Scripts/python.exe -c ' *)",
+      "mcp__Claude_Preview__preview_start"
+    ]
+  }
+}

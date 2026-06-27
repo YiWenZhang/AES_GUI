@@ -1,28 +1,220 @@
 # -*- coding: utf-8 -*-
 """
-MainWindow — PySide6 QMainWindow with four tab modules.
+MainWindow — left-sidebar navigation + QStackedWidget page flow.
 """
 
 from PySide6.QtWidgets import (
-    QMainWindow, QTabWidget, QStatusBar, QMenuBar, QMenu,
-    QMessageBox, QWidget, QVBoxLayout, QToolBar,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QStackedWidget, QListWidget, QListWidgetItem,
+    QStatusBar, QLabel, QFrame, QMessageBox,
 )
-from PySide6.QtGui import QAction
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QAction, QFont
+from PySide6.QtCore import Qt, QSize, Signal
 
 from .aes_adapter import AesDllAdapter, get_adapter
 from .auth_manager import AuthManager
 from .text_cipher import TextCipher
 from .file_cipher import FileCipher
 
-from .ui_register import RegisterTab
-from .ui_login import LoginTab
-from .ui_text import TextCipherTab
-from .ui_file import FileCipherTab
+from .ui_register import RegisterPage
+from .ui_login import LoginPage
+from .ui_text import TextCipherPage
+from .ui_file import FileCipherPage
+
+
+# ── Global stylesheet ─────────────────────────────────────
+STYLESHEET = """
+/* ── 全局 ── */
+QMainWindow {
+    background-color: #f0f2f5;
+}
+QWidget {
+    font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    font-size: 13px;
+    color: #2c3e50;
+}
+
+/* ── 左侧导航 ── */
+#navPanel {
+    background-color: #2c3e50;
+    min-width: 180px;
+    max-width: 180px;
+}
+#navList {
+    background-color: #2c3e50;
+    border: none;
+    outline: none;
+    color: #bdc3c7;
+    font-size: 13px;
+    padding: 8px 0;
+}
+#navList::item {
+    height: 44px;
+    padding: 10px 20px;
+    border-left: 3px solid transparent;
+    color: #bdc3c7;
+}
+#navList::item:hover {
+    background-color: #34495e;
+    color: #ecf0f1;
+}
+#navList::item:selected {
+    background-color: #34495e;
+    border-left: 3px solid #3498db;
+    color: #ecf0f1;
+    font-weight: bold;
+}
+#navList::item:disabled {
+    color: #7f8c8d;
+    background-color: transparent;
+}
+
+/* ── Header ── */
+#headerBar {
+    background-color: #ffffff;
+    border-bottom: 1px solid #dcdfe6;
+    padding: 0 24px;
+    min-height: 52px;
+    max-height: 52px;
+}
+#headerTitle {
+    font-size: 16px;
+    font-weight: bold;
+    color: #2c3e50;
+}
+#headerSub {
+    font-size: 12px;
+    color: #909399;
+}
+
+/* ── Card ── */
+.card {
+    background-color: #ffffff;
+    border: 1px solid #e8eaed;
+    border-radius: 8px;
+    padding: 24px;
+}
+
+/* ── 按钮 ── */
+QPushButton {
+    border-radius: 4px;
+    padding: 7px 20px;
+    font-size: 13px;
+}
+QPushButton:hover {
+    opacity: 0.9;
+}
+QPushButton#primaryBtn {
+    background-color: #3498db;
+    color: #ffffff;
+    border: none;
+    font-weight: bold;
+}
+QPushButton#primaryBtn:hover {
+    background-color: #2980b9;
+}
+QPushButton#primaryBtn:pressed {
+    background-color: #2471a3;
+}
+QPushButton#successBtn {
+    background-color: #27ae60;
+    color: #ffffff;
+    border: none;
+    font-weight: bold;
+}
+QPushButton#successBtn:hover {
+    background-color: #219a52;
+}
+QPushButton#normalBtn {
+    background-color: #ffffff;
+    color: #2c3e50;
+    border: 1px solid #dcdfe6;
+}
+QPushButton#normalBtn:hover {
+    border-color: #3498db;
+    color: #3498db;
+}
+QPushButton#dangerBtn {
+    background-color: #e74c3c;
+    color: #ffffff;
+    border: none;
+}
+QPushButton#dangerBtn:hover {
+    background-color: #c0392b;
+}
+
+/* ── 输入框 ── */
+QLineEdit, QTextEdit, QPlainTextEdit {
+    border: 1px solid #dcdfe6;
+    border-radius: 4px;
+    padding: 6px 10px;
+    background-color: #ffffff;
+    selection-background-color: #3498db;
+}
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
+    border-color: #3498db;
+}
+QLineEdit:read-only {
+    background-color: #f5f7fa;
+}
+
+/* ── GroupBox ── */
+QGroupBox {
+    font-weight: bold;
+    border: 1px solid #e8eaed;
+    border-radius: 6px;
+    margin-top: 12px;
+    padding-top: 16px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 12px;
+    padding: 0 6px;
+    color: #2c3e50;
+}
+
+/* ── 进度条 ── */
+QProgressBar {
+    border: none;
+    border-radius: 4px;
+    text-align: center;
+    background-color: #e8eaed;
+    height: 6px;
+}
+QProgressBar::chunk {
+    background-color: #3498db;
+    border-radius: 4px;
+}
+
+/* ── 状态栏 ── */
+QStatusBar {
+    background-color: #2c3e50;
+    color: #bdc3c7;
+    font-size: 12px;
+    min-height: 28px;
+    padding: 0 12px;
+}
+QStatusBar::item {
+    border: none;
+}
+
+/* ── 分割线 ── */
+#separator {
+    color: #e8eaed;
+}
+"""
+
+
+NAV_ITEMS = [
+    ("🔑  软件注册", "验证硬件注册码"),
+    ("👤  用户登录", "登录或创建账号"),
+    ("📝  文本加解密", "加密 / 解密文本内容"),
+    ("📁  文件加解密", "加密 / 解密任意文件"),
+]
 
 
 class MainWindow(QMainWindow):
-    """Main application window."""
+    page_changed = Signal(int)
 
     def __init__(self):
         super().__init__()
@@ -35,114 +227,193 @@ class MainWindow(QMainWindow):
         self._logged_in_user: str | None = None
 
         self._init_ui()
-
-    # ── UI setup ────────────────────────────────────────────
-
-    def _init_ui(self):
-        self.setWindowTitle("AES 加密工具 — 加密动态链接库应用系统")
-        self.resize(1060, 700)
-        self.setMinimumSize(900, 600)
-
-        self._init_menu_bar()
-        self._init_toolbar()
-        self._init_central_tabs()
-        self._init_status_bar()
+        self._apply_theme()
+        self._update_nav()
 
         if self._adapter.is_loaded:
-            self._on_dll_loaded()
-        else:
-            self._log_status("DLL 未加载 — 请检查 AES_DLL.dll 文件")
+            self._auto_init_dll()
 
-    def _init_menu_bar(self):
-        menubar = self.menuBar()
+    # ── UI ─────────────────────────────────────────────────
 
-        file_menu = menubar.addMenu("文件(&F)")
-        load_dll_action = QAction("加载 DLL", self)
-        load_dll_action.triggered.connect(self._on_load_dll)
-        file_menu.addAction(load_dll_action)
-        file_menu.addSeparator()
-        exit_action = QAction("退出(&X)", self)
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
+    def _init_ui(self):
+        self.setWindowTitle("AES 加密工具")
+        self.resize(1000, 660)
+        self.setMinimumSize(860, 540)
 
-        tools_menu = menubar.addMenu("工具(&T)")
-        gen_key_action = QAction("生成密钥 (硬件)", self)
-        gen_key_action.triggered.connect(self._on_generate_key)
-        tools_menu.addAction(gen_key_action)
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        help_menu = menubar.addMenu("帮助(&H)")
-        about_action = QAction("关于", self)
-        about_action.triggered.connect(self._on_about)
-        help_menu.addAction(about_action)
+        # ── Header ──
+        header = QFrame()
+        header.setObjectName("headerBar")
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(20, 0, 20, 0)
 
-    def _init_toolbar(self):
-        toolbar = self.addToolBar("主工具栏")
-        toolbar.setIconSize(QSize(16, 16))
-        toolbar.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        title_grp = QVBoxLayout()
+        self._header_title = QLabel("AES 加密工具")
+        self._header_title.setObjectName("headerTitle")
+        self._header_sub = QLabel("加密动态链接库设计与应用")
+        self._header_sub.setObjectName("headerSub")
+        title_grp.addWidget(self._header_title)
+        title_grp.addWidget(self._header_sub)
+        hl.addLayout(title_grp)
+        hl.addStretch()
 
-        act_load = QAction("加载DLL", self)
-        act_load.triggered.connect(self._on_load_dll)
-        toolbar.addAction(act_load)
+        self._header_info = QLabel("")
+        self._header_info.setStyleSheet(
+            "font-size:12px; color:#909399; padding-right: 8px;")
+        hl.addWidget(self._header_info)
 
-        act_key = QAction("生成密钥", self)
-        act_key.triggered.connect(self._on_generate_key)
-        toolbar.addAction(act_key)
+        root.addWidget(header)
 
-        toolbar.addSeparator()
+        # ── Body: sidebar + stack ──
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
 
-        act_enc = QAction("文本加解密", self)
-        act_enc.triggered.connect(lambda: self._tabs.setCurrentIndex(2))
-        toolbar.addAction(act_enc)
+        # 左侧导航
+        nav_panel = QFrame()
+        nav_panel.setObjectName("navPanel")
+        nav_layout = QVBoxLayout(nav_panel)
+        nav_layout.setContentsMargins(0, 0, 0, 0)
+        nav_layout.setSpacing(0)
 
-        act_encf = QAction("文件加解密", self)
-        act_encf.triggered.connect(lambda: self._tabs.setCurrentIndex(3))
-        toolbar.addAction(act_encf)
+        self._nav_list = QListWidget()
+        self._nav_list.setObjectName("navList")
+        self._nav_list.setIconSize(QSize(18, 18))
+        self._nav_list.setSpacing(2)
+        for i, (label, tip) in enumerate(NAV_ITEMS):
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, i)
+            item.setToolTip(tip)
+            if i >= 1:
+                item.setFlags(Qt.NoItemFlags)  # disabled initially
+            self._nav_list.addItem(item)
+        self._nav_list.setCurrentRow(0)
+        self._nav_list.currentRowChanged.connect(self._on_nav_changed)
+        nav_layout.addWidget(self._nav_list)
+        nav_layout.addStretch()
 
-    def _init_central_tabs(self):
-        self._tabs = QTabWidget()
-        self.setCentralWidget(self._tabs)
+        # 底部版本号
+        ver = QLabel("v2.1")
+        ver.setStyleSheet("color:#7f8c8d; font-size:11px; padding:12px 20px;")
+        ver.setAlignment(Qt.AlignCenter)
+        nav_layout.addWidget(ver)
 
-        self._register_tab = RegisterTab(self._adapter, self._auth)
-        self._login_tab = LoginTab(
-            self._adapter, self._auth, self._get_key,
-            on_login_success=self._on_login_success,
-            on_logout=self._on_logout,
+        body.addWidget(nav_panel)
+
+        # 右侧内容区
+        self._stack = QStackedWidget()
+        self._stack.setContentsMargins(0, 0, 0, 0)
+
+        self._register_page = RegisterPage(
+            self._adapter, self._auth,
+            on_registered=self._on_software_registered,
         )
-        self._text_tab = TextCipherTab(self._text_cipher, self._get_key)
-        self._file_tab = FileCipherTab(self._file_cipher, self._get_key)
+        self._login_page = LoginPage(
+            self._adapter, self._auth, self._get_key_fn,
+            on_login_success=self._on_user_logged_in,
+            on_logout=self._on_user_logged_out,
+        )
+        self._text_page = TextCipherPage(self._text_cipher, self._get_key_fn)
+        self._file_page = FileCipherPage(self._file_cipher, self._get_key_fn)
 
-        self._tabs.addTab(self._register_tab, "🔑 软件注册")
-        self._tabs.addTab(self._login_tab, "👤 用户登录")
-        self._tabs.addTab(self._text_tab, "📝 文本加解密")
-        self._tabs.addTab(self._file_tab, "📁 文件加解密")
+        self._stack.addWidget(self._register_page)
+        self._stack.addWidget(self._login_page)
+        self._stack.addWidget(self._text_page)
+        self._stack.addWidget(self._file_page)
 
-        self._tabs.currentChanged.connect(self._on_tab_changed)
+        body.addWidget(self._stack, 1)
+        root.addLayout(body, 1)
 
-    def _init_status_bar(self):
+        # ── Status bar ──
         self._status = QStatusBar()
+        self._status_bar_widgets = {
+            "dll": QLabel("DLL: —"),
+            "key": QLabel("密钥: —"),
+            "reg": QLabel("注册: —"),
+            "user": QLabel("用户: 未登录"),
+        }
+        for w in self._status_bar_widgets.values():
+            self._status.addPermanentWidget(w)
         self.setStatusBar(self._status)
-        self._update_status_bar()
+        self._refresh_status_bar()
 
-    # ── event handlers ──────────────────────────────────────
+    def _apply_theme(self):
+        self.setStyleSheet(STYLESHEET)
 
-    def _on_load_dll(self):
-        ok = self._adapter.load()
-        if ok:
-            self._on_dll_loaded()
-            QMessageBox.information(self, "DLL 加载", "AES_DLL.dll 加载成功！")
-        else:
-            QMessageBox.warning(self, "DLL 加载失败",
-                                "未找到 AES_DLL.dll，请将其放置到程序目录。")
-        self._update_status_bar()
+    # ── Navigation ─────────────────────────────────────────
 
-    def _on_dll_loaded(self):
-        self._log_status("DLL 已加载 — AES-256-CBC 加密引擎就绪")
-        if self._key is None:
-            try:
-                self._key = self._adapter.generate_key_from_hardware()
-                self._log_status("密钥已从硬件特征生成 (AES-256, 32 字节)")
-            except Exception:
-                self._log_status("密钥生成失败，请手动点击'生成密钥'")
+    def _on_nav_changed(self, row: int):
+        """Check access permission before switching page."""
+        if row < 0:
+            return
+        if not self._can_access(row):
+            QMessageBox.warning(
+                self, "访问受限",
+                "当前无权限访问该页面。\n请先完成前序步骤后再试。"
+            )
+            current = self._stack.currentIndex()
+            self._nav_list.blockSignals(True)
+            self._nav_list.setCurrentRow(current)
+            self._nav_list.blockSignals(False)
+            return
+        self._stack.setCurrentIndex(row)
+        if row == 2:
+            self._text_page.refresh_key_display()
+        elif row == 3:
+            self._file_page.refresh_key_display()
+
+    def _can_access(self, page: int) -> bool:
+        if page == 0:
+            return True  # register always accessible
+        if page == 1:
+            return self._auth.is_registered()
+        if page in (2, 3):
+            return self._auth.is_registered() and self._logged_in_user is not None
+        return False
+
+    def _update_nav(self):
+        """Enable/disable nav items based on current state."""
+        registered = self._auth.is_registered()
+        logged_in = self._logged_in_user is not None
+
+        for row in range(self._nav_list.count()):
+            item = self._nav_list.item(row)
+            if row == 0:
+                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                continue
+            if row == 1:
+                ok = registered
+            else:
+                ok = registered and logged_in
+
+            if ok:
+                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                item.setText(NAV_ITEMS[row][0])  # remove lock prefix
+            else:
+                item.setFlags(Qt.NoItemFlags)
+                name = NAV_ITEMS[row][0].replace("  ", " 🔒 ")
+                item.setText(name)
+
+    def _swipe_to(self, page: int):
+        """Programmatically switch to a page."""
+        if not self._can_access(page):
+            return
+        self._nav_list.setCurrentRow(page)
+        self._stack.setCurrentIndex(page)
+
+    # ── DLL / Key auto-init ────────────────────────────────
+
+    def _auto_init_dll(self):
+        try:
+            self._key = self._adapter.generate_key_from_hardware()
+            self._header_info.setText("加密引擎已就绪")
+        except Exception:
+            self._header_info.setText("DLL 已加载，密钥待生成")
 
     def _on_generate_key(self):
         if not self._adapter.is_loaded:
@@ -150,56 +421,46 @@ class MainWindow(QMainWindow):
             return
         try:
             self._key = self._adapter.generate_key_from_hardware()
-            self._log_status("密钥已重新生成 (多源硬件特征 + SHA-256)")
-            QMessageBox.information(self, "密钥生成", f"密钥 (hex): {self._key.hex()}")
+            QMessageBox.information(self, "密钥生成", f"密钥 (hex):\n{self._key.hex()}")
         except Exception as e:
             QMessageBox.warning(self, "密钥生成失败", str(e))
-        self._update_status_bar()
+        self._refresh_status_bar()
 
-    def _on_about(self):
-        QMessageBox.about(
-            self,
-            "关于 AES 加密工具",
-            "AES 加密工具 v2.0\n\n"
-            "加密动态链接库设计与应用 — 实训项目\n"
-            "技术栈: C++20 AES-256-CBC DLL + Python PySide6 GUI\n"
-            "开发者: 张译文\n"
-            "仓库: https://github.com/YiWenZhang/AES_DLL",
+    # ── Callbacks ──────────────────────────────────────────
+
+    def _on_software_registered(self):
+        self._update_nav()
+        self._refresh_status_bar()
+        QMessageBox.information(
+            self, "注册成功",
+            "软件已成功激活！\n现在您可以登录或创建用户账号。"
         )
+        self._swipe_to(1)  # → login page
 
-    def _on_tab_changed(self, index: int):
-        names = ["软件注册", "用户登录", "文本加解密", "文件加解密"]
-        self._log_status(f"已切换到: {names[index]}")
-        # refresh key display when switching to text or file tab
-        if index == 2:
-            self._text_tab.refresh_key_display()
-        elif index == 3:
-            self._file_tab.refresh_key_display()
-        self._update_status_bar()
-
-    def _on_login_success(self, username: str):
+    def _on_user_logged_in(self, username: str):
         self._logged_in_user = username
-        self._update_status_bar()
+        self._header_info.setText(f"登录用户: {username}")
+        self._update_nav()
+        self._refresh_status_bar()
+        self._swipe_to(2)  # → text cipher page
 
-    def _on_logout(self):
+    def _on_user_logged_out(self):
         self._logged_in_user = None
-        self._update_status_bar()
+        self._header_info.setText("")
+        self._update_nav()
+        self._refresh_status_bar()
+        self._swipe_to(1)  # → login page
 
-    # ── key accessor (pass to tabs) ─────────────────────────
-
-    def _get_key(self) -> bytes | None:
+    def _get_key_fn(self) -> bytes | None:
         return self._key
 
-    # ── helpers ─────────────────────────────────────────────
+    def _refresh_status_bar(self):
+        dll_txt = "✓ 已加载" if self._adapter.is_loaded else "✗ 未加载"
+        key_txt = "已生成" if self._key else "—"
+        reg_txt = "已激活" if self._auth.is_registered() else "未激活"
+        user_txt = self._logged_in_user or "未登录"
 
-    def _log_status(self, msg: str):
-        self._status.showMessage(msg)
-
-    def _update_status_bar(self):
-        dll_text = "✓ 已加载" if self._adapter.is_loaded else "✗ 未加载"
-        key_text = "已生成" if self._key else "—"
-        reg_text = "已注册" if self._auth.is_registered() else "未注册"
-        parts = [f"DLL: {dll_text}", f"密钥: {key_text}", f"注册: {reg_text}"]
-        if self._logged_in_user:
-            parts.append(f"当前用户: {self._logged_in_user}")
-        self._log_status("  |  ".join(parts))
+        self._status_bar_widgets["dll"].setText(f"DLL: {dll_txt}")
+        self._status_bar_widgets["key"].setText(f"密钥: {key_txt}")
+        self._status_bar_widgets["reg"].setText(f"注册: {reg_txt}")
+        self._status_bar_widgets["user"].setText(f"用户: {user_txt}")

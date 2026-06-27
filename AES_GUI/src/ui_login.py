@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-LoginTab — user registration & login UI.
+LoginPage — login / register combined page with auto-redirect.
 """
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
-    QLineEdit, QPushButton, QLabel, QMessageBox,
+    QWidget, QVBoxLayout, QHBoxLayout,
+    QLineEdit, QPushButton, QLabel, QFrame, QStackedWidget,
+    QMessageBox,
 )
 from PySide6.QtCore import Qt
 from typing import Callable
@@ -14,7 +15,7 @@ from .aes_adapter import AesDllAdapter
 from .auth_manager import AuthManager
 
 
-class LoginTab(QWidget):
+class LoginPage(QWidget):
     def __init__(
         self,
         adapter: AesDllAdapter,
@@ -33,153 +34,183 @@ class LoginTab(QWidget):
         self._init_ui()
 
     def _init_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(32, 28, 32, 28)
+        outer.addStretch()
 
-        # ── Current session status ──
-        self._session_label = QLabel("当前未登录")
-        self._session_label.setStyleSheet("font-size: 13px; color: gray; padding: 4px;")
-        layout.addWidget(self._session_label)
+        card = QFrame()
+        card.setProperty("class", "card")
+        card.setMaximumWidth(440)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(40, 32, 40, 32)
+        card_layout.setSpacing(16)
 
-        # ── Login group ──
-        grp_login = QGroupBox("用户登录")
-        login_layout = QVBoxLayout(grp_login)
+        # ── Session hint ──
+        self._session_label = QLabel("当前状态: 未登录")
+        self._session_label.setAlignment(Qt.AlignCenter)
+        self._session_label.setStyleSheet("font-size:12px; color:#909399;")
+        card_layout.addWidget(self._session_label)
 
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("用户名:"))
+        # ── Inner stack: login / register forms ──
+        self._form_stack = QStackedWidget()
+
+        # --- Login form ---
+        login_widget = QWidget()
+        login_form = QVBoxLayout(login_widget)
+        login_form.setContentsMargins(0, 0, 0, 0)
+        login_form.setSpacing(12)
+
+        login_title = QLabel("用户登录")
+        login_title.setAlignment(Qt.AlignCenter)
+        login_title.setStyleSheet("font-size:20px; font-weight:bold; color:#2c3e50;")
+        login_form.addWidget(login_title)
+
+        login_form.addWidget(QLabel("用户名"))
         self._login_user = QLineEdit()
         self._login_user.setPlaceholderText("请输入用户名")
-        self._login_user.setFixedWidth(240)
-        row1.addWidget(self._login_user)
-        row1.addStretch()
-        login_layout.addLayout(row1)
+        login_form.addWidget(self._login_user)
 
-        row2 = QHBoxLayout()
-        row2.addWidget(QLabel("密  码:"))
+        login_form.addWidget(QLabel("密码"))
         self._login_pwd = QLineEdit()
         self._login_pwd.setPlaceholderText("请输入密码")
         self._login_pwd.setEchoMode(QLineEdit.Password)
-        self._login_pwd.setFixedWidth(240)
-        row2.addWidget(self._login_pwd)
-        row2.addStretch()
-        login_layout.addLayout(row2)
+        login_form.addWidget(self._login_pwd)
 
-        row3 = QHBoxLayout()
-        btn_login = QPushButton("登录")
+        btn_login = QPushButton("登  录")
+        btn_login.setObjectName("primaryBtn")
         btn_login.clicked.connect(self._on_login)
         btn_login.setDefault(True)
-        row3.addWidget(btn_login)
+        login_form.addWidget(btn_login)
 
-        self._btn_logout = QPushButton("退出登录")
-        self._btn_logout.clicked.connect(self._on_logout_clicked)
-        self._btn_logout.setEnabled(False)
-        row3.addWidget(self._btn_logout)
+        self._login_status = QLabel("")
+        login_form.addWidget(self._login_status)
 
-        row3.addStretch()
-        login_layout.addLayout(row3)
+        switch_reg = QPushButton("还没有账号？点击注册 →")
+        switch_reg.setStyleSheet(
+            "border:none; color:#3498db; font-size:12px; text-decoration:underline;"
+        )
+        switch_reg.setCursor(Qt.PointingHandCursor)
+        switch_reg.clicked.connect(lambda: self._form_stack.setCurrentIndex(1))
+        login_form.addWidget(switch_reg)
 
-        self._login_status = QLabel()
-        login_layout.addWidget(self._login_status)
+        login_form.addStretch()
+        self._form_stack.addWidget(login_widget)
 
-        layout.addWidget(grp_login)
+        # --- Register form ---
+        reg_widget = QWidget()
+        reg_form = QVBoxLayout(reg_widget)
+        reg_form.setContentsMargins(0, 0, 0, 0)
+        reg_form.setSpacing(12)
 
-        # ── Register group ──
-        grp_reg = QGroupBox("注册新用户")
-        reg_layout = QVBoxLayout(grp_reg)
+        reg_title = QLabel("注册新用户")
+        reg_title.setAlignment(Qt.AlignCenter)
+        reg_title.setStyleSheet("font-size:20px; font-weight:bold; color:#2c3e50;")
+        reg_form.addWidget(reg_title)
 
-        row4 = QHBoxLayout()
-        row4.addWidget(QLabel("用户名:"))
+        reg_form.addWidget(QLabel("用户名 (3-20 字符)"))
         self._reg_user = QLineEdit()
-        self._reg_user.setPlaceholderText("请设置用户名 (3-20 字符)")
-        self._reg_user.setFixedWidth(240)
-        row4.addWidget(self._reg_user)
-        row4.addStretch()
-        reg_layout.addLayout(row4)
+        self._reg_user.setPlaceholderText("请设置用户名")
+        reg_form.addWidget(self._reg_user)
 
-        row5 = QHBoxLayout()
-        row5.addWidget(QLabel("密  码:"))
+        reg_form.addWidget(QLabel("密码 (至少 4 位)"))
         self._reg_pwd = QLineEdit()
-        self._reg_pwd.setPlaceholderText("请设置密码 (至少4位)")
+        self._reg_pwd.setPlaceholderText("请设置密码")
         self._reg_pwd.setEchoMode(QLineEdit.Password)
-        self._reg_pwd.setFixedWidth(240)
-        row5.addWidget(self._reg_pwd)
-        row5.addStretch()
-        reg_layout.addLayout(row5)
+        reg_form.addWidget(self._reg_pwd)
 
-        row6 = QHBoxLayout()
-        row6.addWidget(QLabel("确认密码:"))
+        reg_form.addWidget(QLabel("确认密码"))
         self._reg_pwd2 = QLineEdit()
         self._reg_pwd2.setPlaceholderText("请再次输入密码")
         self._reg_pwd2.setEchoMode(QLineEdit.Password)
-        self._reg_pwd2.setFixedWidth(240)
-        row6.addWidget(self._reg_pwd2)
-        row6.addStretch()
-        reg_layout.addLayout(row6)
+        reg_form.addWidget(self._reg_pwd2)
 
-        row7 = QHBoxLayout()
-        btn_register = QPushButton("注册")
+        btn_register = QPushButton("注  册")
+        btn_register.setObjectName("successBtn")
         btn_register.clicked.connect(self._on_register)
-        row7.addWidget(btn_register)
-        row7.addStretch()
-        reg_layout.addLayout(row7)
+        reg_form.addWidget(btn_register)
 
-        self._reg_status = QLabel()
-        reg_layout.addWidget(self._reg_status)
+        self._reg_status = QLabel("")
+        reg_form.addWidget(self._reg_status)
 
-        layout.addWidget(grp_reg)
+        switch_login = QPushButton("← 已有账号？返回登录")
+        switch_login.setStyleSheet(
+            "border:none; color:#3498db; font-size:12px; text-decoration:underline;"
+        )
+        switch_login.setCursor(Qt.PointingHandCursor)
+        switch_login.clicked.connect(lambda: self._form_stack.setCurrentIndex(0))
+        reg_form.addWidget(switch_login)
 
-        layout.addStretch()
+        reg_form.addStretch()
+        self._form_stack.addWidget(reg_widget)
 
-    # ── login ────────────────────────────────────────────────
+        card_layout.addWidget(self._form_stack)
+
+        # ── Logout button (visible only when logged in) ──
+        self._btn_logout = QPushButton("退出登录")
+        self._btn_logout.setObjectName("dangerBtn")
+        self._btn_logout.clicked.connect(self._on_logout_clicked)
+        self._btn_logout.setVisible(False)
+        card_layout.addWidget(self._btn_logout)
+
+        hbox = QHBoxLayout()
+        hbox.addStretch()
+        hbox.addWidget(card)
+        hbox.addStretch()
+        outer.addLayout(hbox)
+        outer.addStretch()
+
+    # ── Login ──────────────────────────────────────────────
 
     def _on_login(self):
         key = self._get_key()
         if key is None:
-            self._login_status.setText("⚠ 请先生成密钥（在工具栏点击'生成密钥'）")
-            self._login_status.setStyleSheet("color: orange;")
+            self._login_status.setText("⚠ 请先生成密钥")
+            self._login_status.setStyleSheet("color: #e67e22;")
             return
 
         username = self._login_user.text().strip()
         password = self._login_pwd.text()
         if not username or not password:
             self._login_status.setText("⚠ 请输入用户名和密码")
-            self._login_status.setStyleSheet("color: orange;")
+            self._login_status.setStyleSheet("color: #e67e22;")
             return
 
         try:
             if self._auth.login(username, password, key):
                 self._logged_in_user = username
-                self._login_status.setText(f"✓ 登录成功 — 欢迎回来, {username}!")
-                self._login_status.setStyleSheet("color: green; font-weight: bold;")
-                self._update_session_label()
-                self._btn_logout.setEnabled(True)
+                self._session_label.setText(f"当前用户: {username}")
+                self._session_label.setStyleSheet(
+                    "font-size:12px; color:#27ae60; font-weight:bold;")
+                self._login_status.setText(f"✓ 登录成功 — 欢迎, {username}!")
+                self._login_status.setStyleSheet("color: #27ae60; font-weight: bold;")
+                self._btn_logout.setVisible(True)
                 if self._on_login_success:
                     self._on_login_success(username)
             else:
                 self._login_status.setText("✗ 用户名或密码错误，或用户不存在")
-                self._login_status.setStyleSheet("color: red;")
+                self._login_status.setStyleSheet("color: #e74c3c;")
         except Exception as e:
             self._login_status.setText(f"✗ 登录失败: {e}")
-            self._login_status.setStyleSheet("color: red;")
+            self._login_status.setStyleSheet("color: #e74c3c;")
 
     def _on_logout_clicked(self):
         self._logged_in_user = None
-        self._btn_logout.setEnabled(False)
-        self._update_session_label()
-        self._login_status.setText("已退出登录")
-        self._login_status.setStyleSheet("color: gray;")
+        self._session_label.setText("当前状态: 未登录")
+        self._session_label.setStyleSheet("font-size:12px; color:#909399;")
+        self._btn_logout.setVisible(False)
         self._login_user.clear()
         self._login_pwd.clear()
+        self._login_status.clear()
         if self._on_logout:
             self._on_logout()
 
-    # ── register ─────────────────────────────────────────────
+    # ── Register ───────────────────────────────────────────
 
     def _on_register(self):
         key = self._get_key()
         if key is None:
             self._reg_status.setText("⚠ 请先生成密钥")
-            self._reg_status.setStyleSheet("color: orange;")
+            self._reg_status.setStyleSheet("color: #e67e22;")
             return
 
         username = self._reg_user.text().strip()
@@ -188,58 +219,45 @@ class LoginTab(QWidget):
 
         if not username:
             self._reg_status.setText("⚠ 请输入用户名")
-            self._reg_status.setStyleSheet("color: orange;")
+            self._reg_status.setStyleSheet("color: #e67e22;")
             return
         if len(username) < 3 or len(username) > 20:
             self._reg_status.setText("⚠ 用户名长度需在 3-20 字符之间")
-            self._reg_status.setStyleSheet("color: orange;")
+            self._reg_status.setStyleSheet("color: #e67e22;")
             return
         if not pwd1:
             self._reg_status.setText("⚠ 请输入密码")
-            self._reg_status.setStyleSheet("color: orange;")
+            self._reg_status.setStyleSheet("color: #e67e22;")
             return
         if len(pwd1) < 4:
             self._reg_status.setText("⚠ 密码至少需要 4 位")
-            self._reg_status.setStyleSheet("color: orange;")
+            self._reg_status.setStyleSheet("color: #e67e22;")
             return
         if pwd1 != pwd2:
             self._reg_status.setText("⚠ 两次输入的密码不一致")
-            self._reg_status.setStyleSheet("color: orange;")
+            self._reg_status.setStyleSheet("color: #e67e22;")
             return
-
         if self._auth.user_exists(username):
             self._reg_status.setText("⚠ 该用户名已被注册，请更换")
-            self._reg_status.setStyleSheet("color: orange;")
+            self._reg_status.setStyleSheet("color: #e67e22;")
             return
 
         try:
             if self._auth.register_user(username, pwd1, key):
-                self._reg_status.setText(f"✓ 用户 '{username}' 注册成功！请切换到登录")
-                self._reg_status.setStyleSheet("color: green; font-weight: bold;")
+                self._reg_status.setText(f"✓ 用户 '{username}' 注册成功！")
+                self._reg_status.setStyleSheet("color: #27ae60; font-weight: bold;")
                 QMessageBox.information(
                     self, "注册成功",
                     f"用户 '{username}' 注册成功！\n请切换到登录面板进行登录。"
                 )
+                self._form_stack.setCurrentIndex(0)
+                self._login_user.setText(username)
                 self._reg_user.clear()
                 self._reg_pwd.clear()
                 self._reg_pwd2.clear()
             else:
                 self._reg_status.setText("✗ 注册失败")
-                self._reg_status.setStyleSheet("color: red;")
+                self._reg_status.setStyleSheet("color: #e74c3c;")
         except Exception as e:
             self._reg_status.setText(f"✗ 注册失败: {e}")
-            self._reg_status.setStyleSheet("color: red;")
-
-    # ── helpers ──────────────────────────────────────────────
-
-    def _update_session_label(self):
-        if self._logged_in_user:
-            self._session_label.setText(f"当前登录用户: {self._logged_in_user}")
-            self._session_label.setStyleSheet(
-                "font-size: 13px; color: green; font-weight: bold; padding: 4px;"
-            )
-        else:
-            self._session_label.setText("当前未登录")
-            self._session_label.setStyleSheet(
-                "font-size: 13px; color: gray; padding: 4px;"
-            )
+            self._reg_status.setStyleSheet("color: #e74c3c;")
