@@ -11,7 +11,7 @@ from typing import Optional
 from .aes_adapter import AesDllAdapter
 
 
-REG_ROOT = winreg.HKEY_CURRENT_USER
+REG_ROOT = winreg.HKEY_LOCAL_MACHINE
 REG_KEY = r"SOFTWARE\AES_Tool"
 
 
@@ -76,8 +76,7 @@ class AuthManager:
         """Validate and persist a registration code."""
         if not self.validate_registration(code):
             return False
-        self._write_value("RegistrationCode", code)
-        return True
+        return self._write_value("RegistrationCode", code)
 
     # ── user account ────────────────────────────────────────
 
@@ -89,8 +88,7 @@ class AuthManager:
         """Store username and encrypted-password in registry."""
         try:
             enc_pwd = self._adapter.encrypt_string(password, key)
-            self._write_value(f"User_{username}", enc_pwd)
-            return True
+            return self._write_value(f"User_{username}", enc_pwd)
         except Exception:
             return False
 

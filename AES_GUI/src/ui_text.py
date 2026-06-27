@@ -11,14 +11,23 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from typing import Callable
 
+from .audit_log import AuditLogger
 from .text_cipher import TextCipher
 
 
 class TextCipherPage(QWidget):
-    def __init__(self, cipher: TextCipher, key_getter: Callable[[], bytes | None]):
+    def __init__(
+        self,
+        cipher: TextCipher,
+        key_getter: Callable[[], bytes | None],
+        audit_logger: AuditLogger | None = None,
+        current_user_getter: Callable[[], str | None] | None = None,
+    ):
         super().__init__()
         self._cipher = cipher
         self._get_key = key_getter
+        self._audit_logger = audit_logger
+        self._get_current_user = current_user_getter or (lambda: None)
         self._init_ui()
 
     def _init_ui(self):
@@ -140,10 +149,12 @@ class TextCipherPage(QWidget):
         key = self._get_key()
         if key is None:
             QMessageBox.warning(self, "错误", "请先生成密钥")
+            self._audit("文本加密", "失败", "加密失败：密钥未生成")
             return
         plain = self._input_area.toPlainText()
         if not plain:
             self._output_area.setPlainText("[错误] 请输入待加密文本")
+            self._audit("文本加密", "失败", "加密失败：输入为空")
             return
         try:
             result = self._cipher.encrypt(plain, key)
@@ -153,17 +164,24 @@ class TextCipherPage(QWidget):
                 f"明文 {pb} 字节 → 密文 {len(result)//2} 字节 "
                 f"({len(result)} hex, 含 32 字符 IV)"
             )
+            self._audit(
+                "文本加密", "成功", "文本加密成功",
+                {"input_bytes": pb, "output_hex_length": len(result)},
+            )
         except Exception as e:
             self._output_area.setPlainText(f"加密失败: {e}")
+            self._audit("文本加密", "失败", f"加密异常：{e}")
 
     def _on_decrypt(self):
         key = self._get_key()
         if key is None:
             QMessageBox.warning(self, "错误", "请先生成密钥")
+            self._audit("文本解密", "失败", "解密失败：密钥未生成")
             return
         hex_in = self._input_area.toPlainText().strip()
         if not hex_in:
             self._output_area.setPlainText("[错误] 请输入十六进制密文")
+            self._audit("文本解密", "失败", "解密失败：输入为空")
             return
         try:
             result = self._cipher.decrypt(hex_in, key)
@@ -172,8 +190,13 @@ class TextCipherPage(QWidget):
                 f"解密成功 — 还原 {len(result)} 字符 "
                 f"({len(result.encode('utf-8'))} 字节)"
             )
+            self._audit(
+                "文本解密", "成功", "文本解密成功",
+                {"input_hex_length": len(hex_in), "output_bytes": len(result.encode("utf-8"))},
+            )
         except Exception as e:
             self._output_area.setPlainText(f"解密失败: {e}\n\n密钥是否正确？")
+            self._audit("文本解密", "失败", f"解密异常：{e}")
 
     def _on_import_txt(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -242,3 +265,11 @@ class TextCipherPage(QWidget):
             self._key_label.setText(key.hex())
         else:
             self._key_label.setText("密钥未生成")
+
+    def _audit(self, action: str, status: str, message: str, extra: dict | None = None):
+        if self._audit_logger:
+            self._audit_logger.append(
+                action, status, message,
+                user=self._get_current_user() or "未登录",
+                extra=extra,
+            )

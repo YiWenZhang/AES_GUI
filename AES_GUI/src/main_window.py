@@ -15,11 +15,17 @@ from .aes_adapter import AesDllAdapter, get_adapter
 from .auth_manager import AuthManager
 from .text_cipher import TextCipher
 from .file_cipher import FileCipher
+from .app_paths import AUDIT_LOG_PATH
+from .audit_log import AuditLogger
+from .integrity import IntegrityService
+from .password_strength import PasswordStrengthService
+from .report_exporter import AcceptanceReportExporter, ReportContext
 
 from .ui_register import RegisterPage
 from .ui_login import LoginPage
 from .ui_text import TextCipherPage
 from .ui_file import FileCipherPage
+from .ui_audit import AuditReportPage
 
 
 # ── Global stylesheet ─────────────────────────────────────
@@ -210,6 +216,7 @@ NAV_ITEMS = [
     ("👤  用户登录", "登录或创建账号"),
     ("📝  文本加解密", "加密 / 解密文本内容"),
     ("📁  文件加解密", "加密 / 解密任意文件"),
+    ("📊  审计报告", "查看操作审计并导出验收报告"),
 ]
 
 
@@ -222,6 +229,10 @@ class MainWindow(QMainWindow):
         self._auth = AuthManager(self._adapter)
         self._text_cipher = TextCipher(self._adapter)
         self._file_cipher = FileCipher(self._adapter)
+        self._password_strength = PasswordStrengthService()
+        self._integrity = IntegrityService()
+        self._audit_logger = AuditLogger(AUDIT_LOG_PATH)
+        self._report_exporter = AcceptanceReportExporter()
 
         self._key: bytes | None = None
         self._logged_in_user: str | None = None
@@ -312,19 +323,37 @@ class MainWindow(QMainWindow):
         self._register_page = RegisterPage(
             self._adapter, self._auth,
             on_registered=self._on_software_registered,
+            audit_logger=self._audit_logger,
         )
         self._login_page = LoginPage(
             self._adapter, self._auth, self._get_key_fn,
             on_login_success=self._on_user_logged_in,
             on_logout=self._on_user_logged_out,
+            password_strength=self._password_strength,
+            audit_logger=self._audit_logger,
         )
-        self._text_page = TextCipherPage(self._text_cipher, self._get_key_fn)
-        self._file_page = FileCipherPage(self._file_cipher, self._get_key_fn)
+        self._text_page = TextCipherPage(
+            self._text_cipher, self._get_key_fn,
+            audit_logger=self._audit_logger,
+            current_user_getter=self._get_current_user,
+        )
+        self._file_page = FileCipherPage(
+            self._file_cipher, self._get_key_fn,
+            integrity=self._integrity,
+            audit_logger=self._audit_logger,
+            current_user_getter=self._get_current_user,
+        )
+        self._audit_page = AuditReportPage(
+            self._audit_logger,
+            self._report_exporter,
+            self._build_report_context,
+        )
 
         self._stack.addWidget(self._register_page)
         self._stack.addWidget(self._login_page)
         self._stack.addWidget(self._text_page)
         self._stack.addWidget(self._file_page)
+        self._stack.addWidget(self._audit_page)
 
         body.addWidget(self._stack, 1)
         root.addLayout(body, 1)
@@ -366,13 +395,15 @@ class MainWindow(QMainWindow):
             self._text_page.refresh_key_display()
         elif row == 3:
             self._file_page.refresh_key_display()
+        elif row == 4:
+            self._audit_page.refresh()
 
     def _can_access(self, page: int) -> bool:
         if page == 0:
             return True  # register always accessible
         if page == 1:
             return self._auth.is_registered()
-        if page in (2, 3):
+        if page in (2, 3, 4):
             return self._auth.is_registered() and self._logged_in_user is not None
         return False
 
@@ -453,6 +484,19 @@ class MainWindow(QMainWindow):
 
     def _get_key_fn(self) -> bytes | None:
         return self._key
+
+    def _get_current_user(self) -> str | None:
+        return self._logged_in_user
+
+    def _build_report_context(self) -> ReportContext:
+        return ReportContext(
+            app_name="AES 加密工具",
+            version="v2.1",
+            dll_loaded=self._adapter.is_loaded,
+            registered=self._auth.is_registered(),
+            current_user=self._logged_in_user or "未登录",
+            audit_entries=self._audit_logger.read_recent(200),
+        )
 
     def _refresh_status_bar(self):
         dll_txt = "✓ 已加载" if self._adapter.is_loaded else "✗ 未加载"

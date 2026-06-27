@@ -13,9 +13,7 @@ class TextCipher:
         self._adapter = adapter
 
     def encrypt(self, plaintext: str, key: bytes) -> str:
-        """Encrypt plaintext → hex ciphertext string."""
-        if not plaintext:
-            raise ValueError("Plaintext must not be empty")
+        """Encrypt plaintext → hex ciphertext string. Empty string is supported."""
         return self._adapter.encrypt_string(plaintext, key)
 
     def decrypt(self, hex_cipher: str, key: bytes) -> str:
