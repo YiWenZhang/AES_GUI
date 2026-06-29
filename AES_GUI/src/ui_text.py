@@ -81,23 +81,25 @@ class TextCipherPage(QWidget):
         btn_dec.clicked.connect(self._on_decrypt)
         btn_row.addWidget(btn_dec)
 
-        btn_txt = QPushButton("导入 TXT")
-        btn_txt.setObjectName("normalBtn")
-        btn_txt.clicked.connect(self._on_import_txt)
-        btn_row.addWidget(btn_txt)
-
-        btn_docx = QPushButton("导入 Word")
-        btn_docx.setObjectName("normalBtn")
-        btn_docx.clicked.connect(self._on_import_docx)
-        btn_row.addWidget(btn_docx)
-
         btn_clear = QPushButton("清空")
         btn_clear.setObjectName("normalBtn")
         btn_clear.clicked.connect(self._input_area.clear)
         btn_row.addWidget(btn_clear)
-
         btn_row.addStretch()
         left_layout.addLayout(btn_row)
+
+        import_row = QHBoxLayout()
+        btn_txt = QPushButton("导入 TXT")
+        btn_txt.setObjectName("normalBtn")
+        btn_txt.clicked.connect(self._on_import_txt)
+        import_row.addWidget(btn_txt)
+
+        btn_docx = QPushButton("导入 Word")
+        btn_docx.setObjectName("normalBtn")
+        btn_docx.clicked.connect(self._on_import_docx)
+        import_row.addWidget(btn_docx)
+        import_row.addStretch()
+        left_layout.addLayout(import_row)
         splitter.addWidget(left)
 
         # Right: output
@@ -126,18 +128,20 @@ class TextCipherPage(QWidget):
         btn_copy.clicked.connect(self._on_copy)
         out_btn.addWidget(btn_copy)
 
-        btn_save = QPushButton("💾 保存")
-        btn_save.setObjectName("normalBtn")
-        btn_save.clicked.connect(self._on_save)
-        out_btn.addWidget(btn_save)
-
         btn_clear_out = QPushButton("清空")
         btn_clear_out.setObjectName("normalBtn")
         btn_clear_out.clicked.connect(self._output_area.clear)
         out_btn.addWidget(btn_clear_out)
-
         out_btn.addStretch()
         right_layout.addLayout(out_btn)
+
+        save_btn = QHBoxLayout()
+        btn_save = QPushButton("💾 保存")
+        btn_save.setObjectName("normalBtn")
+        btn_save.clicked.connect(self._on_save)
+        save_btn.addWidget(btn_save)
+        save_btn.addStretch()
+        right_layout.addLayout(save_btn)
         splitter.addWidget(right)
 
         splitter.setSizes([480, 480])
@@ -158,11 +162,14 @@ class TextCipherPage(QWidget):
             return
         try:
             result = self._cipher.encrypt(plain, key)
-            self._output_area.setPlainText(result)
+            upper = result.upper()
+            iv_part = upper[:32]
+            body_part = upper[32:]
+            self._output_area.setHtml(f"<b>{iv_part}</b>{body_part}")
             pb = len(plain.encode("utf-8"))
             self._output_info.setText(
                 f"明文 {pb} 字节 → 密文 {len(result)//2} 字节 "
-                f"({len(result)} hex, 含 32 字符 IV)"
+                f"({len(result)} hex, 前 32 字符为 IV，已加粗)"
             )
             self._audit(
                 "文本加密", "成功", "文本加密成功",
@@ -184,7 +191,7 @@ class TextCipherPage(QWidget):
             self._audit("文本解密", "失败", "解密失败：输入为空")
             return
         try:
-            result = self._cipher.decrypt(hex_in, key)
+            result = self._cipher.decrypt(hex_in.lower(), key)
             self._output_area.setPlainText(result)
             self._output_info.setText(
                 f"解密成功 — 还原 {len(result)} 字符 "

@@ -6,7 +6,7 @@ LoginPage — login / register combined page with auto-redirect.
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QLabel, QFrame, QStackedWidget,
-    QMessageBox, QProgressBar,
+    QMessageBox, QProgressBar, QCheckBox,
 )
 from PySide6.QtCore import Qt
 from typing import Callable
@@ -15,13 +15,16 @@ from .aes_adapter import AesDllAdapter
 from .auth_manager import AuthManager
 from .audit_log import AuditLogger
 from .password_strength import PasswordStrengthService
+from .admin_registry_service import AdminRegistryService
 
 
 class LoginPage(QWidget):
+    SAVED_PASSWORD_PLACEHOLDER = "********"
     def __init__(
         self,
         adapter: AesDllAdapter,
         auth: AuthManager,
+        admin_registry: AdminRegistryService,
         key_getter: Callable[[], bytes | None],
         on_login_success: Callable[[str], None] = None,
         on_logout: Callable[[], None] = None,
@@ -31,6 +34,7 @@ class LoginPage(QWidget):
         super().__init__()
         self._adapter = adapter
         self._auth = auth
+        self._admin_registry = admin_registry
         self._get_key = key_getter
         self._on_login_success = on_login_success
         self._on_logout = on_logout
@@ -38,6 +42,7 @@ class LoginPage(QWidget):
         self._audit_logger = audit_logger
         self._logged_in_user: str | None = None
         self._init_ui()
+        self._restore_saved_login_hint()
         self._update_password_strength()
 
     def _init_ui(self):
@@ -81,7 +86,11 @@ class LoginPage(QWidget):
         self._login_pwd = QLineEdit()
         self._login_pwd.setPlaceholderText("请输入密码")
         self._login_pwd.setEchoMode(QLineEdit.Password)
-        login_form.addWidget(self._login_pwd)
+        login_form.addLayout(self._password_row(self._login_pwd))
+
+        self._remember_login = QCheckBox("记住登录，下次可直接登录")
+        self._remember_login.setStyleSheet("font-size:12px; color:#606266;")
+        login_form.addWidget(self._remember_login)
 
         btn_login = QPushButton("登  录")
         btn_login.setObjectName("primaryBtn")
@@ -125,7 +134,7 @@ class LoginPage(QWidget):
         self._reg_pwd.setPlaceholderText("请设置密码")
         self._reg_pwd.setEchoMode(QLineEdit.Password)
         self._reg_pwd.textChanged.connect(self._update_password_strength)
-        reg_form.addWidget(self._reg_pwd)
+        reg_form.addLayout(self._password_row(self._reg_pwd))
 
         self._strength_bar = QProgressBar()
         self._strength_bar.setRange(0, 100)
@@ -141,7 +150,7 @@ class LoginPage(QWidget):
         self._reg_pwd2 = QLineEdit()
         self._reg_pwd2.setPlaceholderText("请再次输入密码")
         self._reg_pwd2.setEchoMode(QLineEdit.Password)
-        reg_form.addWidget(self._reg_pwd2)
+        reg_form.addLayout(self._password_row(self._reg_pwd2))
 
         btn_register = QPushButton("注  册")
         btn_register.setObjectName("successBtn")
@@ -178,6 +187,50 @@ class LoginPage(QWidget):
         outer.addLayout(hbox)
         outer.addStretch()
 
+    def _password_row(self, edit: QLineEdit) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        row.addWidget(edit)
+        btn_toggle = QPushButton("显示")
+        btn_toggle.setObjectName("normalBtn")
+        btn_toggle.setMinimumWidth(76)
+        btn_toggle.setMaximumWidth(86)
+        btn_toggle.setStyleSheet("padding: 6px 8px;")
+        btn_toggle.setCheckable(True)
+        btn_toggle.toggled.connect(lambda checked, field=edit, button=btn_toggle: self._toggle_password_visible(field, button, checked))
+        row.addWidget(btn_toggle)
+        return row
+
+    def _toggle_password_visible(self, edit: QLineEdit, button: QPushButton, visible: bool):
+        edit.setEchoMode(QLineEdit.Normal if visible else QLineEdit.Password)
+        button.setText("隐藏" if visible else "显示")
+
+    def _restore_saved_login_hint(self):
+        saved_user = self._auth.get_saved_login_user()
+        if not saved_user:
+            return
+        self._login_user.setText(saved_user)
+        self._login_pwd.setText(self.SAVED_PASSWORD_PLACEHOLDER)
+        self._remember_login.setChecked(True)
+        self._login_status.setText("已保存登录，点击登录即可进入")
+        self._login_status.setStyleSheet("color: #3498db;")
+
+    def _complete_login(self, username: str, via_token: bool = False):
+        self._logged_in_user = username
+        self._session_label.setText(f"当前用户: {username}")
+        self._session_label.setStyleSheet(
+            "font-size:12px; color:#27ae60; font-weight:bold;")
+        if via_token:
+            self._login_status.setText(f"✓ 已通过保存登录进入 — 欢迎, {username}!")
+            self._audit("用户登录", "成功", "通过保存登录 token 登录成功", username)
+        else:
+            self._login_status.setText(f"✓ 登录成功 — 欢迎, {username}!")
+            self._audit("用户登录", "成功", "登录成功", username)
+        self._login_status.setStyleSheet("color: #27ae60; font-weight: bold;")
+        self._btn_logout.setVisible(True)
+        if self._on_login_success:
+            self._on_login_success(username)
+
     # ── Login ──────────────────────────────────────────────
 
     def _on_login(self):
@@ -190,24 +243,28 @@ class LoginPage(QWidget):
             self._audit("用户登录", "失败", "登录失败：密钥未生成", username)
             return
 
-        if not username or not password:
-            self._login_status.setText("⚠ 请输入用户名和密码")
+        if not username:
+            self._login_status.setText("⚠ 请输入用户名")
             self._login_status.setStyleSheet("color: #e67e22;")
-            self._audit("用户登录", "失败", "登录失败：用户名或密码为空", username)
+            self._audit("用户登录", "失败", "登录失败：用户名为空", username)
+            return
+
+        if not password or password == self.SAVED_PASSWORD_PLACEHOLDER:
+            saved_user = self._auth.login_with_token(username)
+            if saved_user:
+                self._complete_login(saved_user, via_token=True)
+                return
+            self._login_pwd.clear()
+            self._login_status.setText("⚠ 保存登录不存在或已失效，请输入密码")
+            self._login_status.setStyleSheet("color: #e67e22;")
+            self._audit("用户登录", "失败", "登录失败：保存登录不可用", username)
             return
 
         try:
             if self._auth.login(username, password, key):
-                self._logged_in_user = username
-                self._session_label.setText(f"当前用户: {username}")
-                self._session_label.setStyleSheet(
-                    "font-size:12px; color:#27ae60; font-weight:bold;")
-                self._login_status.setText(f"✓ 登录成功 — 欢迎, {username}!")
-                self._login_status.setStyleSheet("color: #27ae60; font-weight: bold;")
-                self._btn_logout.setVisible(True)
-                self._audit("用户登录", "成功", "登录成功", username)
-                if self._on_login_success:
-                    self._on_login_success(username)
+                if self._remember_login.isChecked():
+                    self._auth.save_login_token(username)
+                self._complete_login(username)
             else:
                 self._login_status.setText("✗ 用户名或密码错误，或用户不存在")
                 self._login_status.setStyleSheet("color: #e74c3c;")
@@ -280,7 +337,9 @@ class LoginPage(QWidget):
             return
 
         try:
-            if self._auth.register_user(username, pwd1, key):
+            encrypted_password = self._adapter.encrypt_string(pwd1, key)
+            result = self._admin_registry.create_user_with_admin(username, encrypted_password)
+            if result.success:
                 self._reg_status.setText(f"✓ 用户 '{username}' 注册成功！")
                 self._reg_status.setStyleSheet("color: #27ae60; font-weight: bold;")
                 self._audit(
@@ -297,9 +356,9 @@ class LoginPage(QWidget):
                 self._reg_pwd.clear()
                 self._reg_pwd2.clear()
             else:
-                self._reg_status.setText("✗ 注册失败")
+                self._reg_status.setText(f"✗ 注册失败：{result.message}")
                 self._reg_status.setStyleSheet("color: #e74c3c;")
-                self._audit("用户注册", "失败", "注册失败：注册表写入失败", username)
+                self._audit("用户注册", "失败", f"注册失败：{result.message}", username)
         except Exception as e:
             self._reg_status.setText(f"✗ 注册失败: {e}")
             self._reg_status.setStyleSheet("color: #e74c3c;")

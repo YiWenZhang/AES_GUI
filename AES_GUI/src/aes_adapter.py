@@ -14,11 +14,19 @@ from typing import Optional
 def _find_dll() -> str:
     """Locate AES_DLL.dll in known search paths."""
     here = Path(__file__).resolve().parent.parent
-    candidates = [
+    candidates = []
+    if getattr(sys, "frozen", False):
+        app_dir = Path(sys.executable).resolve().parent
+        candidates.extend([
+            app_dir / "AES_DLL.dll",
+            app_dir / "_internal" / "AES_DLL.dll",
+            Path(getattr(sys, "_MEIPASS", app_dir)) / "AES_DLL.dll",
+        ])
+    candidates.extend([
         here / "AES_DLL.dll",
         here / ".venv" / "Lib" / "site-packages" / "aesdll" / "AES_DLL.dll",
         Path(sys.prefix) / "aesdll" / "AES_DLL.dll",
-    ]
+    ])
     for p in candidates:
         if p.exists():
             return str(p)

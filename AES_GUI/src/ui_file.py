@@ -7,7 +7,7 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QLabel, QFileDialog, QTextEdit,
-    QProgressBar, QFrame, QMessageBox,
+    QProgressBar, QFrame, QMessageBox, QSizePolicy,
 )
 from PySide6.QtCore import Signal
 from typing import Callable
@@ -53,6 +53,7 @@ class FileCipherPage(QWidget):
         current_user_getter: Callable[[], str | None] | None = None,
     ):
         super().__init__()
+        self.setAcceptDrops(True)
         self._cipher = cipher
         self._get_key = key_getter
         self._integrity = integrity or IntegrityService()
@@ -64,8 +65,8 @@ class FileCipherPage(QWidget):
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(8)
 
         # Key bar
         key_row = QHBoxLayout()
@@ -80,14 +81,14 @@ class FileCipherPage(QWidget):
         card = QFrame()
         card.setProperty("class", "card")
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(24, 24, 24, 24)
-        card_layout.setSpacing(14)
+        card_layout.setContentsMargins(18, 16, 18, 16)
+        card_layout.setSpacing(8)
 
         title = QLabel("文件加解密操作")
-        title.setStyleSheet("font-weight:bold; font-size:16px; color:#2c3e50;")
+        title.setStyleSheet("font-weight:bold; font-size:15px; color:#2c3e50;")
         card_layout.addWidget(title)
 
-        drop_tip = QLabel("支持从资源管理器拖入单个文件，系统会自动建议加密或解密输出路径。")
+        drop_tip = QLabel("支持拖入单个文件，系统会自动建议输出路径。")
         drop_tip.setStyleSheet("color:#909399; font-size:12px;")
         card_layout.addWidget(drop_tip)
 
@@ -128,37 +129,45 @@ class FileCipherPage(QWidget):
         btn_dec.clicked.connect(self._on_decrypt)
         r3.addWidget(btn_dec)
 
-        r3.addStretch()
-
         btn_open = QPushButton("打开输出文件夹")
         btn_open.setObjectName("normalBtn")
         btn_open.clicked.connect(self._on_open_folder)
         r3.addWidget(btn_open)
+        r3.addStretch()
         card_layout.addLayout(r3)
 
-        hash_row = QHBoxLayout()
+        hash_calc_row = QHBoxLayout()
         btn_hash_src = QPushButton("计算源文件 SHA-256")
         btn_hash_src.setObjectName("normalBtn")
         btn_hash_src.clicked.connect(self._on_hash_source)
-        hash_row.addWidget(btn_hash_src)
+        hash_calc_row.addWidget(btn_hash_src)
 
         btn_hash_out = QPushButton("计算输出文件 SHA-256")
         btn_hash_out.setObjectName("normalBtn")
         btn_hash_out.clicked.connect(self._on_hash_output)
-        hash_row.addWidget(btn_hash_out)
+        hash_calc_row.addWidget(btn_hash_out)
+        hash_calc_row.addStretch()
+        card_layout.addLayout(hash_calc_row)
 
-        btn_verify = QPushButton("校验期望 SHA-256")
-        btn_verify.setObjectName("normalBtn")
-        btn_verify.clicked.connect(self._on_verify_expected_hash)
-        hash_row.addWidget(btn_verify)
-        hash_row.addStretch()
-        card_layout.addLayout(hash_row)
+        hash_copy_row = QHBoxLayout()
+        btn_copy_src = QPushButton("复制源文件 SHA-256")
+        btn_copy_src.setObjectName("normalBtn")
+        btn_copy_src.clicked.connect(self._on_copy_source_hash)
+        hash_copy_row.addWidget(btn_copy_src)
+
+        btn_copy_out = QPushButton("复制输出文件 SHA-256")
+        btn_copy_out.setObjectName("normalBtn")
+        btn_copy_out.clicked.connect(self._on_copy_output_hash)
+        hash_copy_row.addWidget(btn_copy_out)
+        hash_copy_row.addStretch()
+        card_layout.addLayout(hash_copy_row)
 
         expected_row = QHBoxLayout()
-        expected_row.addWidget(QLabel("期望 SHA-256"))
-        self._expected_hash = QLineEdit()
-        self._expected_hash.setPlaceholderText("粘贴 64 位 SHA-256，用于校验源文件")
-        expected_row.addWidget(self._expected_hash)
+        expected_row.addWidget(QLabel("说明"))
+        hint = QLabel("文件完整性校验请使用左侧“SHA-256 数字签名”栏目")
+        hint.setStyleSheet("font-size:11px; color:#909399;")
+        expected_row.addWidget(hint)
+        expected_row.addStretch()
         card_layout.addLayout(expected_row)
 
         self._hash_info = QLabel("")
@@ -175,11 +184,38 @@ class FileCipherPage(QWidget):
         card_layout.addWidget(QLabel("操作日志"))
         self._log = QTextEdit()
         self._log.setReadOnly(True)
-        self._log.setMinimumHeight(160)
-        card_layout.addWidget(self._log)
+        self._log.setMinimumHeight(140)
+        self._log.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        card_layout.addWidget(self._log, 3)
 
-        layout.addWidget(card)
-        layout.addStretch()
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        layout.addWidget(card, 1)
+
+    def dragEnterEvent(self, event):
+        path = self._path_from_drop_event(event)
+        if path:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        path = self._path_from_drop_event(event)
+        if path:
+            self._on_file_dropped(path)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def _path_from_drop_event(self, event) -> str:
+        if not event.mimeData().hasUrls():
+            return ""
+        urls = event.mimeData().urls()
+        if not urls:
+            return ""
+        path = urls[0].toLocalFile()
+        if path and os.path.isfile(path):
+            return path
+        return ""
 
     def _on_browse_input(self):
         path, _ = QFileDialog.getOpenFileName(self, "选择文件", "", "所有文件 (*)")
@@ -214,6 +250,10 @@ class FileCipherPage(QWidget):
             return
         out_path = self._output_path.text().strip() or \
                    FileCipher.suggest_output_path(in_path, for_encrypt=True)
+        if not FileCipher.can_encrypt(in_path) or not FileCipher.is_encrypted_file(out_path):
+            QMessageBox.warning(self, "不支持的文件格式", "不支持该类型文件格式加密")
+            self._audit("文件加密", "失败", "加密失败：不支持该类型文件格式", input_path=in_path, output_path=out_path)
+            return
         try:
             in_hash = self._integrity.sha256_file(in_path)
             self._progress.setVisible(True)
@@ -249,6 +289,10 @@ class FileCipherPage(QWidget):
             return
         out_path = self._output_path.text().strip() or \
                    FileCipher.suggest_output_path(in_path, for_encrypt=False)
+        if not FileCipher.can_decrypt(in_path):
+            QMessageBox.warning(self, "不支持的文件格式", "不支持该类型文件格式解密")
+            self._audit("文件解密", "失败", "解密失败：不支持该类型文件格式", input_path=in_path, output_path=out_path)
+            return
         try:
             in_hash = self._integrity.sha256_file(in_path)
             self._progress.setVisible(True)
@@ -278,6 +322,21 @@ class FileCipherPage(QWidget):
     def _on_hash_output(self):
         path = self._output_path.text().strip()
         self._calculate_and_show_hash(path, is_source=False)
+
+    def _on_copy_source_hash(self):
+        self._copy_hash(self._last_source_hash, "源文件")
+
+    def _on_copy_output_hash(self):
+        self._copy_hash(self._last_output_hash, "输出文件")
+
+    def _copy_hash(self, result: FileHashResult | None, label: str):
+        if result is None:
+            QMessageBox.warning(self, "无摘要", f"请先计算{label} SHA-256")
+            return
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(result.sha256)
+        self._hash_info.setText(f"{label} SHA-256 已复制到剪贴板：{result.sha256}")
+        self._hash_info.setStyleSheet("font-size:11px; color:#27ae60;")
 
     def _on_verify_expected_hash(self):
         path = self._input_path.text().strip()

@@ -3,19 +3,24 @@
 MainWindow — left-sidebar navigation + QStackedWidget page flow.
 """
 
+from pathlib import Path
+import sys
+
 from PySide6.QtWidgets import (
+    QApplication,
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QStackedWidget, QListWidget, QListWidgetItem,
-    QStatusBar, QLabel, QFrame, QMessageBox,
+    QStatusBar, QLabel, QFrame, QMessageBox, QPushButton,
 )
 from PySide6.QtGui import QAction, QFont
-from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtCore import Qt, QSize, Signal, QProcess
 
 from .aes_adapter import AesDllAdapter, get_adapter
 from .auth_manager import AuthManager
+from .admin_registry_service import AdminRegistryService
 from .text_cipher import TextCipher
 from .file_cipher import FileCipher
-from .app_paths import AUDIT_LOG_PATH
+from .app_paths import AUDIT_LOG_PATH, PROJECT_ROOT
 from .audit_log import AuditLogger
 from .integrity import IntegrityService
 from .password_strength import PasswordStrengthService
@@ -25,6 +30,7 @@ from .ui_register import RegisterPage
 from .ui_login import LoginPage
 from .ui_text import TextCipherPage
 from .ui_file import FileCipherPage
+from .ui_integrity import IntegrityCheckPage
 from .ui_audit import AuditReportPage
 
 
@@ -43,8 +49,8 @@ QWidget {
 /* ── 左侧导航 ── */
 #navPanel {
     background-color: #2c3e50;
-    min-width: 180px;
-    max-width: 180px;
+    min-width: 210px;
+    max-width: 210px;
 }
 #navList {
     background-color: #2c3e50;
@@ -52,11 +58,11 @@ QWidget {
     outline: none;
     color: #bdc3c7;
     font-size: 13px;
-    padding: 8px 0;
+    padding: 4px 0;
 }
 #navList::item {
-    height: 44px;
-    padding: 10px 20px;
+    height: 38px;
+    padding: 8px 16px;
     border-left: 3px solid transparent;
     color: #bdc3c7;
 }
@@ -148,6 +154,16 @@ QPushButton#dangerBtn {
 QPushButton#dangerBtn:hover {
     background-color: #c0392b;
 }
+QPushButton#sidebarDangerBtn {
+    background-color: #c0392b;
+    color: #ffffff;
+    border: none;
+    margin: 8px 14px 4px 14px;
+    padding: 8px 10px;
+}
+QPushButton#sidebarDangerBtn:hover {
+    background-color: #a93226;
+}
 
 /* ── 输入框 ── */
 QLineEdit, QTextEdit, QPlainTextEdit {
@@ -216,6 +232,7 @@ NAV_ITEMS = [
     ("👤  用户登录", "登录或创建账号"),
     ("📝  文本加解密", "加密 / 解密文本内容"),
     ("📁  文件加解密", "加密 / 解密任意文件"),
+    ("🛡️  SHA-256 数字签名", "计算文件摘要并校验完整性"),
     ("📊  审计报告", "查看操作审计并导出验收报告"),
 ]
 
@@ -227,6 +244,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._adapter: AesDllAdapter = get_adapter()
         self._auth = AuthManager(self._adapter)
+        self._admin_registry = AdminRegistryService(self._auth)
         self._text_cipher = TextCipher(self._adapter)
         self._file_cipher = FileCipher(self._adapter)
         self._password_strength = PasswordStrengthService()
@@ -248,8 +266,8 @@ class MainWindow(QMainWindow):
 
     def _init_ui(self):
         self.setWindowTitle("AES 加密工具")
-        self.resize(1000, 660)
-        self.setMinimumSize(860, 540)
+        self.resize(1040, 680)
+        self.setMinimumSize(900, 560)
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -295,7 +313,7 @@ class MainWindow(QMainWindow):
         self._nav_list = QListWidget()
         self._nav_list.setObjectName("navList")
         self._nav_list.setIconSize(QSize(18, 18))
-        self._nav_list.setSpacing(2)
+        self._nav_list.setSpacing(0)
         for i, (label, tip) in enumerate(NAV_ITEMS):
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, i)
@@ -305,8 +323,12 @@ class MainWindow(QMainWindow):
             self._nav_list.addItem(item)
         self._nav_list.setCurrentRow(0)
         self._nav_list.currentRowChanged.connect(self._on_nav_changed)
-        nav_layout.addWidget(self._nav_list)
-        nav_layout.addStretch()
+        nav_layout.addWidget(self._nav_list, 1)
+
+        self._btn_factory_reset = QPushButton("恢复出厂设置")
+        self._btn_factory_reset.setObjectName("sidebarDangerBtn")
+        self._btn_factory_reset.clicked.connect(self._on_factory_reset)
+        nav_layout.addWidget(self._btn_factory_reset)
 
         # 底部版本号
         ver = QLabel("v2.1")
@@ -314,19 +336,19 @@ class MainWindow(QMainWindow):
         ver.setAlignment(Qt.AlignCenter)
         nav_layout.addWidget(ver)
 
-        body.addWidget(nav_panel)
+        body.addWidget(nav_panel, 0)
 
         # 右侧内容区
         self._stack = QStackedWidget()
         self._stack.setContentsMargins(0, 0, 0, 0)
 
         self._register_page = RegisterPage(
-            self._adapter, self._auth,
+            self._adapter, self._auth, self._admin_registry,
             on_registered=self._on_software_registered,
             audit_logger=self._audit_logger,
         )
         self._login_page = LoginPage(
-            self._adapter, self._auth, self._get_key_fn,
+            self._adapter, self._auth, self._admin_registry, self._get_key_fn,
             on_login_success=self._on_user_logged_in,
             on_logout=self._on_user_logged_out,
             password_strength=self._password_strength,
@@ -343,6 +365,11 @@ class MainWindow(QMainWindow):
             audit_logger=self._audit_logger,
             current_user_getter=self._get_current_user,
         )
+        self._integrity_page = IntegrityCheckPage(
+            self._integrity,
+            audit_logger=self._audit_logger,
+            current_user_getter=self._get_current_user,
+        )
         self._audit_page = AuditReportPage(
             self._audit_logger,
             self._report_exporter,
@@ -353,6 +380,7 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._login_page)
         self._stack.addWidget(self._text_page)
         self._stack.addWidget(self._file_page)
+        self._stack.addWidget(self._integrity_page)
         self._stack.addWidget(self._audit_page)
 
         body.addWidget(self._stack, 1)
@@ -395,7 +423,7 @@ class MainWindow(QMainWindow):
             self._text_page.refresh_key_display()
         elif row == 3:
             self._file_page.refresh_key_display()
-        elif row == 4:
+        elif row == 5:
             self._audit_page.refresh()
 
     def _can_access(self, page: int) -> bool:
@@ -403,7 +431,7 @@ class MainWindow(QMainWindow):
             return True  # register always accessible
         if page == 1:
             return self._auth.is_registered()
-        if page in (2, 3, 4):
+        if page in (2, 3, 4, 5):
             return self._auth.is_registered() and self._logged_in_user is not None
         return False
 
@@ -481,6 +509,50 @@ class MainWindow(QMainWindow):
         self._update_nav()
         self._refresh_status_bar()
         self._swipe_to(1)  # → login page
+
+    def _on_factory_reset(self):
+        reply = QMessageBox.warning(
+            self,
+            "恢复出厂设置",
+            "此操作将清除软件激活状态、所有用户信息和审计日志。\n\n"
+            "继续后会弹出系统 UAC 请求管理员权限，是否继续？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        result = self._admin_registry.factory_reset_with_admin()
+        if not result.success:
+            QMessageBox.warning(self, "恢复失败", result.message)
+            return
+
+        self._audit_logger.clear()
+        self._auth.clear_login_token()
+        self._logged_in_user = None
+        self._key = None
+        self._header_info.setText("")
+        self._update_nav()
+        self._refresh_status_bar()
+        self._swipe_to(0)
+        QMessageBox.information(self, "恢复完成", "已恢复未注册状态，并清空用户信息和审计日志。\n\n应用将自动重启。")
+        self._restart_application()
+
+    def _restart_application(self):
+        if getattr(sys, "frozen", False):
+            program = str(Path(sys.executable).resolve())
+            arguments = []
+            working_dir = str(Path(sys.executable).resolve().parent)
+        else:
+            program = str(Path(sys.executable).resolve())
+            arguments = [str(PROJECT_ROOT / "main.py")]
+            working_dir = str(PROJECT_ROOT)
+
+        if QProcess.startDetached(program, arguments, working_dir):
+            QApplication.quit()
+            return
+
+        QMessageBox.warning(self, "重启失败", "恢复已完成，但自动重启失败，请手动重新打开应用。")
 
     def _get_key_fn(self) -> bytes | None:
         return self._key

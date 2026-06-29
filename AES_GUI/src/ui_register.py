@@ -13,6 +13,7 @@ from typing import Callable
 from .aes_adapter import AesDllAdapter
 from .auth_manager import AuthManager
 from .audit_log import AuditLogger
+from .admin_registry_service import AdminRegistryService
 
 
 class RegisterPage(QWidget):
@@ -20,12 +21,14 @@ class RegisterPage(QWidget):
         self,
         adapter: AesDllAdapter,
         auth: AuthManager,
+        admin_registry: AdminRegistryService,
         on_registered: Callable[[], None] = None,
         audit_logger: AuditLogger | None = None,
     ):
         super().__init__()
         self._adapter = adapter
         self._auth = auth
+        self._admin_registry = admin_registry
         self._on_registered = on_registered
         self._audit_logger = audit_logger
         self._init_ui()
@@ -140,16 +143,17 @@ class RegisterPage(QWidget):
             self._audit("失败", "软件激活失败：未输入注册码")
             return
 
-        if self._auth.register(code):
+        result = self._admin_registry.activate_with_admin(code)
+        if result.success:
             self._status_label.setText("✓ 注册成功 — 软件已激活")
             self._status_label.setStyleSheet("color: #27ae60; font-weight: bold;")
             self._audit("成功", "软件激活成功")
             if self._on_registered:
                 self._on_registered()
         else:
-            self._status_label.setText("✗ 注册码无效，请检查后重试")
+            self._status_label.setText(f"✗ {result.message}")
             self._status_label.setStyleSheet("color: #e74c3c;")
-            self._audit("失败", "软件激活失败：注册码无效")
+            self._audit("失败", f"软件激活失败：{result.message}")
 
     def _audit(self, status: str, message: str):
         if self._audit_logger:

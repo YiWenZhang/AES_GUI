@@ -67,8 +67,8 @@ class AuditReportPage(QWidget):
 
         self._log_view = QTextEdit()
         self._log_view.setReadOnly(True)
-        self._log_view.setMinimumHeight(360)
-        card_layout.addWidget(self._log_view)
+        self._log_view.setMinimumHeight(180)
+        card_layout.addWidget(self._log_view, 1)
 
         self._status = QLabel("")
         self._status.setStyleSheet("color:#909399; font-size:12px;")
